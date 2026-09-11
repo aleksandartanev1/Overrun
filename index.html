@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Overrun — Lane Defense</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="wrap">
+  <div id="topbar">
+    <div id="topbarleft">
+      <div class="title">OVER<span>RUN</span></div>
+      <div id="topbtns">
+        <button class="iconbtn" id="pausebtn" title="Pause">II</button>
+        <button class="iconbtn" id="mutebtn" title="Mute">♪</button>
+        <button class="iconbtn" id="helpbtn" title="How to play">?</button>
+      </div>
+    </div>
+    <div id="wavebox">WAVE <b id="wavenum">1</b> / <span id="wavetotal">8</span></div>
+  </div>
+
+  <div id="healthbars">
+    <div class="hbwrap">
+      <div class="hblabel">YOUR BASE</div>
+      <div class="hbouter"><div class="hbinner" id="playerhp" style="width:100%"></div></div>
+    </div>
+    <div class="hbwrap">
+      <div class="hblabel">ENEMY BASE</div>
+      <div class="hbouter"><div class="hbinner" id="enemyhp" style="width:100%"></div></div>
+    </div>
+  </div>
+
+  <div id="canvasholder">
+    <canvas id="game"></canvas>
+    <div id="wavebanner"></div>
+    <div id="pausedtag" class="">PAUSED</div>
+    <div id="helpmodal">
+      <div class="box">
+        <h2>HOW TO PLAY</h2>
+        <p>Supplies build up automatically. Spend them deploying troops from your base on the left — they march right and fight anything in their path.</p>
+        <p><b>1</b> Grunt — cheap, balanced<br>
+          <b>2</b> Heavy — slow, tanky, hits hard<br>
+          <b>3</b> Ranged — fragile, attacks from range</p>
+        <p>Hold the line through 8 waves of the horde. If your base hits 0 HP, it's over. Break the enemy base first and you win early.</p>
+      </div>
+      <button id="helpclose">GOT IT</button>
+    </div>
+    <div id="overlay" style="display:flex;">
+      <h1 id="overlaytitle">OVERRUN</h1>
+      <p id="overlaytext">Deploy troops, hold the line, survive eight waves.</p>
+      <button id="overlaybtn">START</button>
+    </div>
+  </div>
+
+  <div id="hud">
+    <div id="supplybox">
+      <div class="lab">SUPPLIES</div>
+      <div class="num" id="supplynum">0</div>
+    </div>
+    <div class="unitbtns" id="unitbtns"></div>
+  </div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
