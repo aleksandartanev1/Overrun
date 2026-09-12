@@ -81,35 +81,35 @@
         const holder = document.getElementById('canvasholder');
         W = canvas.width = holder.clientWidth;
         H = canvas.height = holder.clientHeight;
-        GROUND_Y = H - 46;
+        GROUND_Y = H - 60;
     }
     window.addEventListener('resize', resize);
 
-    const BASE_W = 46;
+    const BASE_W = 74;
     const TOTAL_WAVES = 8;
 
     const UNIT_TYPES = {
         grunt: {
-            name: 'GRUNT', key: '1', cost: 20, hp: 40, dmg: 6, range: 26, atkSpeed: 0.8,
-            speed: 42, w: 20, h: 30, color: '#7c9c5f', splash: false
+            name: 'GRUNT', key: '1', cost: 20, hp: 40, dmg: 6, range: 34, atkSpeed: 0.8,
+            speed: 55, w: 32, h: 48, color: '#7c9c5f', splash: false, sprite: 'grunt'
         },
         heavy: {
-            name: 'HEAVY', key: '2', cost: 50, hp: 140, dmg: 14, range: 30, atkSpeed: 1.4,
-            speed: 20, w: 28, h: 36, color: '#5b6b8c', splash: false
+            name: 'HEAVY', key: '2', cost: 50, hp: 140, dmg: 14, range: 39, atkSpeed: 1.4,
+            speed: 26, w: 45, h: 58, color: '#5b6b8c', splash: false, sprite: 'heavy'
         },
         ranged: {
-            name: 'RANGED', key: '3', cost: 35, hp: 25, dmg: 8, range: 110, atkSpeed: 1.1,
-            speed: 34, w: 18, h: 28, color: '#d4a017', splash: false, projectile: true
+            name: 'RANGED', key: '3', cost: 35, hp: 25, dmg: 8, range: 140, atkSpeed: 1.1,
+            speed: 44, w: 29, h: 45, color: '#d4a017', splash: false, projectile: true, sprite: 'ranged'
         }
     };
 
     const ENEMY_TYPES = {
-        shambler: { hp: 30, dmg: 5, range: 22, atkSpeed: 0.9, speed: 26, w: 20, h: 30, color: '#8a5a4a' },
-        runner:   { hp: 18, dmg: 4, range: 20, atkSpeed: 0.7, speed: 62, w: 16, h: 26, color: '#a86a3a' },
-        brute:    { hp: 110, dmg: 16, range: 26, atkSpeed: 1.3, speed: 18, w: 30, h: 38, color: '#5a3a2a' }
+        shambler: { hp: 30, dmg: 5, range: 29, atkSpeed: 0.9, speed: 34, w: 32, h: 48, color: '#8a5a4a', sprite: 'shambler' },
+        runner:   { hp: 18, dmg: 4, range: 26, atkSpeed: 0.7, speed: 81, w: 26, h: 42, color: '#a86a3a', sprite: 'runner' },
+        brute:    { hp: 110, dmg: 16, range: 34, atkSpeed: 1.3, speed: 23, w: 48, h: 61, color: '#5a3a2a', sprite: 'brute' }
     };
 
-    let state, units, enemies, projectiles, particles, bursts, supplies, wave, waveTimer, spawnQueue, running, gameOver, lastTime, paused;
+    let state, units, enemies, projectiles, particles, bursts, supplies, wave, waveTimer, spawnQueue, running, gameOver, lastTime, paused, animClock = 0;
     let shakeTime = 0, shakeMag = 0;
 
     function triggerShake(mag, dur) {
@@ -259,6 +259,7 @@
         if (!running || gameOver) return;
 
         supplies += dt * (3.2 + wave * 0.15);
+        animClock += dt;
         updateHUD();
 
         // spawn queued enemies
@@ -426,27 +427,150 @@
     function drawBase(x, isPlayer) {
         const color = isPlayer ? '#3a4a33' : '#4a3328';
         ctx.fillStyle = color;
-        ctx.fillRect(isPlayer ? 0 : x, GROUND_Y - 70, BASE_W, 70);
+        ctx.fillRect(isPlayer ? 0 : x, GROUND_Y - 112, BASE_W, 112);
         ctx.fillStyle = isPlayer ? '#7c9c5f' : '#c1502e';
-        ctx.fillRect(isPlayer ? 0 : x, GROUND_Y - 74, BASE_W, 6);
+        ctx.fillRect(isPlayer ? 0 : x, GROUND_Y - 118, BASE_W, 10);
     }
 
+    // ---- Sprite drawing: procedural vector humanoids ----
+    function shade(hex, amt) {
+        const n = parseInt(hex.slice(1), 16);
+        let r = (n >> 16) + amt, g = ((n >> 8) & 0xff) + amt, b = (n & 0xff) + amt;
+        r = Math.max(0, Math.min(255, r)); g = Math.max(0, Math.min(255, g)); b = Math.max(0, Math.min(255, b));
+        return '#' + (1 << 24 | r << 16 | g << 8 | b).toString(16).slice(1);
+    }
+
+    // Draws a humanoid centered at (cx, groundY), facing dir (1 = right, -1 = left).
+    function drawHumanoid(cx, groundY, w, h, facing, opts) {
+        const flashOn = opts.flash && opts.flash > 0;
+        const base = flashOn ? '#f2efe6' : opts.color;
+        const dark = flashOn ? '#f2efe6' : shade(opts.color, -50);
+        const skin = flashOn ? '#f2efe6' : '#c99a75';
+        const legPhase = Math.sin(animClock * 8 + cx * 0.4) * (opts.walking ? 1 : 0.25);
+
+        ctx.save();
+        ctx.translate(cx, groundY);
+        ctx.scale(facing, 1);
+
+        const bodyH = h * (opts.hunched ? 0.72 : 0.62);
+        const legH = h - bodyH;
+        const legW = Math.max(3, w * 0.16);
+
+        // legs (simple swinging pair)
+        ctx.fillStyle = dark;
+        ctx.fillRect(-legW - 1 + legPhase * 2, -legH, legW, legH);
+        ctx.fillRect(1 - legPhase * 2, -legH, legW, legH);
+
+        // torso
+        const torsoY = -h + (opts.hunched ? h * 0.06 : 0);
+        ctx.fillStyle = base;
+        if (opts.hunched) {
+            // hunched zombie torso: leaning wedge shape
+            ctx.beginPath();
+            ctx.moveTo(-w * 0.32, torsoY + bodyH);
+            ctx.lineTo(-w * 0.4, torsoY + bodyH * 0.25);
+            ctx.lineTo(w * 0.05, torsoY);
+            ctx.lineTo(w * 0.38, torsoY + bodyH * 0.35);
+            ctx.lineTo(w * 0.3, torsoY + bodyH);
+            ctx.closePath();
+            ctx.fill();
+        } else {
+            const torsoW = opts.bulky ? w * 0.82 : w * 0.62;
+            ctx.fillRect(-torsoW / 2, torsoY, torsoW, bodyH);
+            if (opts.bulky) {
+                // armor plate accent
+                ctx.fillStyle = dark;
+                ctx.fillRect(-torsoW / 2, torsoY, torsoW, bodyH * 0.3);
+            }
+        }
+
+        // head
+        const headR = w * (opts.hunched ? 0.24 : 0.2);
+        const headY = torsoY - headR * 0.9;
+        ctx.fillStyle = opts.hunched ? shade(opts.color, 25) : skin;
+        ctx.beginPath();
+        ctx.arc(opts.hunched ? headR * 0.5 : 0, headY, headR, 0, Math.PI * 2);
+        ctx.fill();
+
+        if (opts.helmet) {
+            ctx.fillStyle = dark;
+            ctx.beginPath();
+            ctx.arc(0, headY, headR + 1.5, Math.PI, Math.PI * 2);
+            ctx.fill();
+            ctx.fillRect(-headR - 1.5, headY, (headR + 1.5) * 2, 2);
+        }
+
+        // arm + weapon (points forward, i.e. +x before facing flip)
+        const armY = torsoY + bodyH * 0.32;
+        ctx.strokeStyle = dark;
+        ctx.lineWidth = Math.max(2, w * 0.1);
+        ctx.lineCap = 'round';
+
+        if (opts.weapon === 'rifle') {
+            ctx.beginPath();
+            ctx.moveTo(w * 0.1, armY);
+            ctx.lineTo(w * 0.55, armY - 2);
+            ctx.stroke();
+        } else if (opts.weapon === 'cannon') {
+            ctx.lineWidth = Math.max(3, w * 0.16);
+            ctx.beginPath();
+            ctx.moveTo(w * 0.15, armY + 2);
+            ctx.lineTo(w * 0.62, armY);
+            ctx.stroke();
+        } else if (opts.weapon === 'bow') {
+            ctx.beginPath();
+            ctx.arc(w * 0.42, armY, w * 0.28, -Math.PI * 0.4, Math.PI * 0.4);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(w * 0.3, armY - w * 0.1);
+            ctx.lineTo(w * 0.62, armY);
+            ctx.lineTo(w * 0.3, armY + w * 0.1);
+            ctx.stroke();
+        } else if (opts.weapon === 'claws') {
+            ctx.beginPath();
+            ctx.moveTo(w * 0.05, armY - 2);
+            ctx.lineTo(w * 0.4, armY - 8);
+            ctx.moveTo(w * 0.05, armY + 2);
+            ctx.lineTo(w * 0.42, armY + 4);
+            ctx.stroke();
+        }
+
+        ctx.restore();
+    }
+
+    const SPRITE_PROFILES = {
+        grunt:    { weapon: 'rifle', helmet: true, bulky: false, hunched: false, walking: true },
+        heavy:    { weapon: 'cannon', helmet: true, bulky: true, hunched: false, walking: true },
+        ranged:   { weapon: 'bow', helmet: false, bulky: false, hunched: false, walking: true },
+        shambler: { weapon: 'claws', helmet: false, bulky: false, hunched: true, walking: true },
+        runner:   { weapon: 'claws', helmet: false, bulky: false, hunched: true, walking: true },
+        brute:    { weapon: 'claws', helmet: false, bulky: true, hunched: true, walking: true }
+    };
+
     function drawEntity(e, isEnemy) {
-        ctx.fillStyle = (e.flash && e.flash > 0) ? '#f2efe6' : e.def.color;
-        ctx.fillRect(e.x - e.w/2, e.y - e.h, e.w, e.h);
+        const profile = SPRITE_PROFILES[e.def.sprite] || { weapon: 'rifle', helmet: false, bulky: false, hunched: false, walking: true };
+        drawHumanoid(e.x, e.y, e.w, e.h, isEnemy ? -1 : 1, {
+            color: e.def.color,
+            flash: e.flash,
+            weapon: profile.weapon,
+            helmet: profile.helmet,
+            bulky: profile.bulky,
+            hunched: profile.hunched,
+            walking: profile.walking
+        });
         // hp bar
         const pct = Math.max(0, e.hp / e.maxHp);
         ctx.fillStyle = '#0c0d0b';
-        ctx.fillRect(e.x - e.w/2, e.y - e.h - 8, e.w, 4);
+        ctx.fillRect(e.x - e.w/2, e.y - e.h - 12, e.w, 6);
         ctx.fillStyle = isEnemy ? '#c1502e' : '#7c9c5f';
-        ctx.fillRect(e.x - e.w/2, e.y - e.h - 8, e.w * pct, 4);
+        ctx.fillRect(e.x - e.w/2, e.y - e.h - 12, e.w * pct, 6);
     }
 
     function drawBursts() {
         for (const b of bursts) {
             ctx.globalAlpha = Math.max(0, b.life / b.maxLife);
             ctx.fillStyle = b.color;
-            ctx.fillRect(b.x - 2, b.y - 2, 4, 4);
+            ctx.fillRect(b.x - 3, b.y - 3, 6, 6);
         }
         ctx.globalAlpha = 1;
     }
@@ -487,11 +611,11 @@
         ctx.fillStyle = '#e8e4d8';
         for (const p of projectiles) {
             ctx.beginPath();
-            ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+            ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
             ctx.fill();
         }
 
-        ctx.font = '11px monospace';
+        ctx.font = '15px monospace';
         ctx.textAlign = 'center';
         for (const pt of particles) {
             ctx.globalAlpha = Math.max(0, pt.life / 0.2);

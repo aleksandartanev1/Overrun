@@ -120,23 +120,28 @@ html, body {
 
 #healthbars {
     display: flex;
-    padding: 6px 18px;
+    padding: 40px 18px;
     gap: 12px;
     background: var(--bg);
     flex-shrink: 0;
     align-items: center;
 }
 .hbwrap { flex: 1; display: flex; align-items: center; gap: 8px; }
-.hblabel { font-size: 11px; width: 74px; color: var(--bone-dim); }
+.hblabel { font-size: 11px; width: 74px; color: var(--bone-dim);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    position: relative;
+    top: 10px;}
 .hbouter {
     flex: 1;
-    height: 14px;
+    height: 18px;
     background: #0c0d0b;
     border: 1px solid #3a3c33;
     position: relative;
 }
 .hbinner {
-    height: 100%;
+    height: 240%;
     transition: width 0.25s ease;
 }
 #playerhp { background: var(--sick-green); }
@@ -226,7 +231,7 @@ canvas {
 }
 .ubtn:hover:not(:disabled) { border-color: var(--rust); }
 .ubtn:disabled { opacity: 0.35; cursor: not-allowed; }
-.ubtn .icon { width: 26px; height: 26px; }
+.ubtn .icon { width: 34px; height: 34px; }
 .ubtn .name { font-size: 10px; letter-spacing: 0.5px; }
 .ubtn .cost { font-size: 11px; color: var(--warn); }
 .ubtn .key {
