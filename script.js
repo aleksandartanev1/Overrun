@@ -111,6 +111,15 @@
     };
     const arrowImg = loadImg('arrow.png');
 
+    // ---- Background art ----
+    const bgSky = loadImg('bg/sky.png');
+    const bgWoods4 = loadImg('bg/woods4.png');
+    const bgWoods3 = loadImg('bg/woods3.png');
+    const bgWoods2 = loadImg('bg/woods2.png');
+    const bgWoods1 = loadImg('bg/woods1.png');
+    const groundTileset = loadImg('bg/tileset.png');
+    const GROUND_TILE_SRC = [ { sx: 7 * 32, sy: 2 * 32 }, { sx: 8 * 32, sy: 2 * 32 } ];
+
     let W, H, GROUND_Y;
     function resize() {
         const holder = document.getElementById('canvasholder');
@@ -474,6 +483,11 @@
     }
 
     // ---- Sprite drawing: real pixel-art sheets ----
+    const spriteBuffer = document.createElement('canvas');
+    spriteBuffer.width = 100;
+    spriteBuffer.height = 100;
+    const bufCtx = spriteBuffer.getContext('2d');
+
     function drawSpriteEntity(e, isEnemy) {
         const sheet = SPRITE_SHEETS[e.def.team];
         if (!sheet) return;
@@ -496,13 +510,29 @@
         const scale = e.h / sheet.contentH;
         const tile = 100 * scale;
 
+        let source = img;
+        let sx = frameIndex * 100;
+
+        // Hit-flash: tint via an offscreen buffer so source-atop only affects
+        // this sprite's own pixels, not whatever's already on the main canvas.
+        if (e.flash && e.flash > 0) {
+            bufCtx.clearRect(0, 0, 100, 100);
+            bufCtx.drawImage(img, sx, 0, 100, 100, 0, 0, 100, 100);
+            bufCtx.globalCompositeOperation = 'source-atop';
+            bufCtx.globalAlpha = Math.min(1, e.flash / 0.12);
+            bufCtx.fillStyle = '#ffffff';
+            bufCtx.fillRect(0, 0, 100, 100);
+            bufCtx.globalCompositeOperation = 'source-over';
+            bufCtx.globalAlpha = 1;
+            source = spriteBuffer;
+            sx = 0;
+        }
+
         ctx.save();
         ctx.translate(e.x, e.y);
         ctx.scale(facing, 1);
         ctx.imageSmoothingEnabled = false;
-        ctx.drawImage(img, frameIndex * 100, 0, 100, 100, -tile / 2, -sheet.groundY * scale, tile, tile);
-
-
+        ctx.drawImage(source, sx, 0, 100, 100, -tile / 2, -sheet.groundY * scale, tile, tile);
         ctx.restore();
     }
 
@@ -543,22 +573,54 @@
             ctx.translate(dx, dy);
         }
 
-        // sky
-        const grad = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
-        grad.addColorStop(0, '#232722');
-        grad.addColorStop(1, '#14150f');
-        ctx.fillStyle = grad;
-        ctx.fillRect(0, 0, W, GROUND_Y);
+        // sky + parallax woods layers (stretched to fill the battlefield backdrop)
+        if (bgSky.complete && bgSky.naturalWidth > 0) {
+            ctx.imageSmoothingEnabled = true;
+            ctx.drawImage(bgSky, 0, 0, 512, 288, 0, 0, W, GROUND_Y);
+            ctx.drawImage(bgWoods4, 0, 0, 512, 288, 0, 0, W, GROUND_Y);
+            ctx.drawImage(bgWoods3, 0, 0, 512, 288, 0, 0, W, GROUND_Y);
+            ctx.drawImage(bgWoods2, 0, 0, 512, 288, 0, 0, W, GROUND_Y);
+            ctx.drawImage(bgWoods1, 0, 0, 512, 288, 0, 0, W, GROUND_Y);
+            // dark scrim so the busy art doesn't fight the HUD/units for attention
+            ctx.fillStyle = 'rgba(10, 11, 9, 0.52)';
+            ctx.fillRect(0, 0, W, GROUND_Y);
+        } else {
+            const grad = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
+            grad.addColorStop(0, '#232722');
+            grad.addColorStop(1, '#14150f');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, W, GROUND_Y);
+        }
 
-        // ground
-        ctx.fillStyle = '#1a1d1a';
-        ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
-        ctx.strokeStyle = '#3a3c33';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(0, GROUND_Y);
-        ctx.lineTo(W, GROUND_Y);
-        ctx.stroke();
+        // ground: tiled dirt/grass strip
+        if (groundTileset.complete && groundTileset.naturalWidth > 0) {
+            const groundH = H - GROUND_Y;
+            const tileW = Math.max(32, groundH * 0.8);
+            ctx.imageSmoothingEnabled = false;
+            let gi = 0;
+            for (let gx = 0; gx < W; gx += tileW) {
+                const src = GROUND_TILE_SRC[gi % GROUND_TILE_SRC.length];
+                ctx.drawImage(groundTileset, src.sx, src.sy, 32, 32, gx, GROUND_Y, tileW + 1, groundH);
+                gi++;
+            }
+            ctx.fillStyle = 'rgba(10, 11, 9, 0.3)';
+            ctx.fillRect(0, GROUND_Y, W, groundH);
+            ctx.strokeStyle = '#3a3c33';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(0, GROUND_Y);
+            ctx.lineTo(W, GROUND_Y);
+            ctx.stroke();
+        } else {
+            ctx.fillStyle = '#1a1d1a';
+            ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
+            ctx.strokeStyle = '#3a3c33';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(0, GROUND_Y);
+            ctx.lineTo(W, GROUND_Y);
+            ctx.stroke();
+        }
 
         drawBase(0, true);
         drawBase(W - BASE_W, false);
