@@ -76,6 +76,41 @@
         lose: () => { tone(220, 0.2, 'sawtooth', 0.06, 0); tone(160, 0.3, 'sawtooth', 0.06, 0.18); }
     };
 
+    // ---- Sprite assets ----
+    const ANIM_FPS = 12;
+    const DEATH_FPS = 10;
+    function loadImg(src) {
+        const img = new Image();
+        img.src = 'assets/' + src;
+        assetsToLoad++;
+        img.onload = () => { assetsLoaded++; };
+        img.onerror = () => { assetsLoaded++; console.warn('Failed to load asset:', src); };
+        return img;
+    }
+    let assetsToLoad = 0, assetsLoaded = 0;
+    const SPRITE_SHEETS = {
+        soldier: {
+            groundY: 60, contentH: 21,
+            walk: { img: loadImg('soldier_walk.png'), frames: 8 },
+            attacks: [
+                { img: loadImg('soldier_attack01.png'), frames: 6 },
+                { img: loadImg('soldier_attack02.png'), frames: 6 },
+                { img: loadImg('soldier_attack03.png'), frames: 9 }
+            ],
+            death: { img: loadImg('soldier_death.png'), frames: 4 }
+        },
+        orc: {
+            groundY: 57, contentH: 15,
+            walk: { img: loadImg('orc_walk.png'), frames: 8 },
+            attacks: [
+                { img: loadImg('orc_attack01.png'), frames: 6 },
+                { img: loadImg('orc_attack02.png'), frames: 6 }
+            ],
+            death: { img: loadImg('orc_death.png'), frames: 4 }
+        }
+    };
+    const arrowImg = loadImg('arrow.png');
+
     let W, H, GROUND_Y;
     function resize() {
         const holder = document.getElementById('canvasholder');
@@ -91,22 +126,22 @@
     const UNIT_TYPES = {
         grunt: {
             name: 'GRUNT', key: '1', cost: 20, hp: 40, dmg: 6, range: 34, atkSpeed: 0.8,
-            speed: 55, w: 32, h: 48, color: '#7c9c5f', splash: false, sprite: 'grunt'
+            speed: 55, w: 32, h: 48, color: '#7c9c5f', splash: false, team: 'soldier', atkVariant: 0
         },
         heavy: {
             name: 'HEAVY', key: '2', cost: 50, hp: 140, dmg: 14, range: 39, atkSpeed: 1.4,
-            speed: 26, w: 45, h: 58, color: '#5b6b8c', splash: false, sprite: 'heavy'
+            speed: 26, w: 45, h: 66, color: '#5b6b8c', splash: false, team: 'soldier', atkVariant: 1
         },
         ranged: {
             name: 'RANGED', key: '3', cost: 35, hp: 25, dmg: 8, range: 140, atkSpeed: 1.1,
-            speed: 44, w: 29, h: 45, color: '#d4a017', splash: false, projectile: true, sprite: 'ranged'
+            speed: 44, w: 29, h: 45, color: '#d4a017', splash: false, projectile: true, team: 'soldier', atkVariant: 2
         }
     };
 
     const ENEMY_TYPES = {
-        shambler: { hp: 30, dmg: 5, range: 29, atkSpeed: 0.9, speed: 34, w: 32, h: 48, color: '#8a5a4a', sprite: 'shambler' },
-        runner:   { hp: 18, dmg: 4, range: 26, atkSpeed: 0.7, speed: 81, w: 26, h: 42, color: '#a86a3a', sprite: 'runner' },
-        brute:    { hp: 110, dmg: 16, range: 34, atkSpeed: 1.3, speed: 23, w: 48, h: 61, color: '#5a3a2a', sprite: 'brute' }
+        shambler: { hp: 30, dmg: 5, range: 29, atkSpeed: 0.9, speed: 34, w: 32, h: 48, color: '#8a5a4a', team: 'orc', atkVariant: 0 },
+        runner:   { hp: 18, dmg: 4, range: 26, atkSpeed: 0.7, speed: 81, w: 26, h: 42, color: '#a86a3a', team: 'orc', atkVariant: 1 },
+        brute:    { hp: 110, dmg: 16, range: 34, atkSpeed: 1.3, speed: 23, w: 48, h: 68, color: '#5a3a2a', team: 'orc', atkVariant: 0 }
     };
 
     let state, units, enemies, projectiles, particles, bursts, supplies, wave, waveTimer, spawnQueue, running, gameOver, lastTime, paused, animClock = 0;
@@ -196,7 +231,8 @@
             x: BASE_W + 4, y: GROUND_Y,
             hp: def.hp, maxHp: def.hp,
             cooldown: 0, target: null, flash: 0,
-            w: def.w, h: def.h
+            w: def.w, h: def.h,
+            attacking: false, walkTimer: 0, attackTimer: 0, dying: false, deathTimer: 0
         });
         sfx.spawnPlayer();
         updateHUD();
@@ -209,7 +245,8 @@
             x: W - BASE_W - 4, y: GROUND_Y,
             hp: def.hp, maxHp: def.hp,
             cooldown: 0, target: null, flash: 0,
-            w: def.w, h: def.h
+            w: def.w, h: def.h,
+            attacking: false, walkTimer: 0, attackTimer: 0, dying: false, deathTimer: 0
         });
         sfx.spawnEnemy();
     }
@@ -249,6 +286,7 @@
     function findTarget(entity, opponents, opponentBaseX, isPlayer) {
         let closest = null, closestDist = Infinity;
         for (const o of opponents) {
+            if (o.dying) continue;
             const d = Math.abs(o.x - entity.x);
             if (d < closestDist) { closestDist = d; closest = o; }
         }
@@ -276,9 +314,11 @@
 
         // move & fight units
         for (const u of units) {
+            if (u.dying) { u.deathTimer += dt; continue; }
             const target = findTarget(u, enemies);
             const distToEnemyBase = (W - BASE_W) - u.x;
             if (target && Math.abs(target.x - u.x) <= (u.def.range + u.w/2 + target.w/2)) {
+                u.attacking = true; u.attackTimer += dt;
                 u.cooldown -= dt;
                 if (u.cooldown <= 0) {
                     u.cooldown = u.def.atkSpeed;
@@ -292,9 +332,11 @@
                     }
                 }
             } else if (distToEnemyBase > u.def.range) {
+                u.attacking = false; u.walkTimer += dt;
                 u.x += u.def.speed * dt;
             } else {
                 // attack enemy base
+                u.attacking = true; u.attackTimer += dt;
                 u.cooldown -= dt;
                 if (u.cooldown <= 0) {
                     u.cooldown = u.def.atkSpeed;
@@ -308,9 +350,11 @@
 
         // move & fight enemies
         for (const en of enemies) {
+            if (en.dying) { en.deathTimer += dt; continue; }
             const target = findTarget(en, units);
             const distToPlayerBase = en.x - BASE_W;
             if (target && Math.abs(target.x - en.x) <= (en.def.range + en.w/2 + target.w/2)) {
+                en.attacking = true; en.attackTimer += dt;
                 en.cooldown -= dt;
                 if (en.cooldown <= 0) {
                     en.cooldown = en.def.atkSpeed;
@@ -320,8 +364,10 @@
                     particles.push({ x: target.x, y: target.y - target.h * 0.6, life: 0.2, text: '-' + en.def.dmg, color: '#e8e4d8' });
                 }
             } else if (distToPlayerBase > en.def.range) {
+                en.attacking = false; en.walkTimer += dt;
                 en.x -= en.def.speed * dt;
             } else {
+                en.attacking = true; en.attackTimer += dt;
                 en.cooldown -= dt;
                 if (en.cooldown <= 0) {
                     en.cooldown = en.def.atkSpeed;
@@ -346,23 +392,26 @@
                 particles.push({ x: p.targetRef.x, y: p.targetRef.y - p.targetRef.h * 0.6, life: 0.2, text: '-' + p.dmg, color: '#e8e4d8' });
                 p.dead = true;
             } else {
+                p.angle = Math.atan2(dy, dx);
                 p.x += (dx / dist) * p.speed * dt;
                 p.y += (dy / dist) * p.speed * dt;
             }
         }
         projectiles = projectiles.filter(p => !p.dead);
 
-        // death bursts before cleanup
+        // trigger death state (once) instead of instant removal
         for (const u of units) {
-            if (u.hp <= 0) { spawnBurst(u.x, u.y - u.h * 0.5, u.def.color); sfx.death(); }
+            if (u.hp <= 0 && !u.dying) { u.dying = true; u.deathTimer = 0; spawnBurst(u.x, u.y - u.h * 0.5, u.def.color); sfx.death(); }
         }
         for (const en of enemies) {
-            if (en.hp <= 0) { spawnBurst(en.x, en.y - en.h * 0.5, en.def.color); sfx.death(); }
+            if (en.hp <= 0 && !en.dying) { en.dying = true; en.deathTimer = 0; spawnBurst(en.x, en.y - en.h * 0.5, en.def.color); sfx.death(); }
         }
 
-        // cleanup dead
-        units = units.filter(u => u.hp > 0);
-        enemies = enemies.filter(en => en.hp > 0);
+        // remove units/enemies once their death animation has finished
+        const soldierDeathDur = SPRITE_SHEETS.soldier.death.frames / DEATH_FPS;
+        const orcDeathDur = SPRITE_SHEETS.orc.death.frames / DEATH_FPS;
+        units = units.filter(u => !(u.dying && u.deathTimer > soldierDeathDur));
+        enemies = enemies.filter(en => !(en.dying && en.deathTimer > orcDeathDur));
 
         // flash decay
         for (const u of units) if (u.flash > 0) u.flash -= dt;
@@ -424,6 +473,39 @@
         overlayBtn.textContent = 'RESTART';
     }
 
+    // ---- Sprite drawing: real pixel-art sheets ----
+    function drawSpriteEntity(e, isEnemy) {
+        const sheet = SPRITE_SHEETS[e.def.team];
+        if (!sheet) return;
+        let frameSet, frameCount, fps;
+        if (e.dying) {
+            frameSet = sheet.death; frameCount = sheet.death.frames; fps = DEATH_FPS;
+        } else if (e.attacking) {
+            const variant = sheet.attacks[e.def.atkVariant] || sheet.attacks[0];
+            frameSet = variant; frameCount = variant.frames; fps = ANIM_FPS;
+        } else {
+            frameSet = sheet.walk; frameCount = sheet.walk.frames; fps = ANIM_FPS;
+        }
+        const timer = e.dying ? e.deathTimer : (e.attacking ? e.attackTimer : e.walkTimer);
+        const rawFrame = Math.floor(timer * fps);
+        const frameIndex = e.dying ? Math.min(rawFrame, frameCount - 1) : (rawFrame % frameCount);
+        const img = frameSet.img;
+        if (!img.complete || img.naturalWidth === 0) return;
+
+        const facing = isEnemy ? -1 : 1;
+        const scale = e.h / sheet.contentH;
+        const tile = 100 * scale;
+
+        ctx.save();
+        ctx.translate(e.x, e.y);
+        ctx.scale(facing, 1);
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(img, frameIndex * 100, 0, 100, 100, -tile / 2, -sheet.groundY * scale, tile, tile);
+
+
+        ctx.restore();
+    }
+
     function drawBase(x, isPlayer) {
         const color = isPlayer ? '#3a4a33' : '#4a3328';
         ctx.fillStyle = color;
@@ -432,133 +514,10 @@
         ctx.fillRect(isPlayer ? 0 : x, GROUND_Y - 118, BASE_W, 10);
     }
 
-    // ---- Sprite drawing: procedural vector humanoids ----
-    function shade(hex, amt) {
-        const n = parseInt(hex.slice(1), 16);
-        let r = (n >> 16) + amt, g = ((n >> 8) & 0xff) + amt, b = (n & 0xff) + amt;
-        r = Math.max(0, Math.min(255, r)); g = Math.max(0, Math.min(255, g)); b = Math.max(0, Math.min(255, b));
-        return '#' + (1 << 24 | r << 16 | g << 8 | b).toString(16).slice(1);
-    }
-
-    // Draws a humanoid centered at (cx, groundY), facing dir (1 = right, -1 = left).
-    function drawHumanoid(cx, groundY, w, h, facing, opts) {
-        const flashOn = opts.flash && opts.flash > 0;
-        const base = flashOn ? '#f2efe6' : opts.color;
-        const dark = flashOn ? '#f2efe6' : shade(opts.color, -50);
-        const skin = flashOn ? '#f2efe6' : '#c99a75';
-        const legPhase = Math.sin(animClock * 8 + cx * 0.4) * (opts.walking ? 1 : 0.25);
-
-        ctx.save();
-        ctx.translate(cx, groundY);
-        ctx.scale(facing, 1);
-
-        const bodyH = h * (opts.hunched ? 0.72 : 0.62);
-        const legH = h - bodyH;
-        const legW = Math.max(3, w * 0.16);
-
-        // legs (simple swinging pair)
-        ctx.fillStyle = dark;
-        ctx.fillRect(-legW - 1 + legPhase * 2, -legH, legW, legH);
-        ctx.fillRect(1 - legPhase * 2, -legH, legW, legH);
-
-        // torso
-        const torsoY = -h + (opts.hunched ? h * 0.06 : 0);
-        ctx.fillStyle = base;
-        if (opts.hunched) {
-            // hunched zombie torso: leaning wedge shape
-            ctx.beginPath();
-            ctx.moveTo(-w * 0.32, torsoY + bodyH);
-            ctx.lineTo(-w * 0.4, torsoY + bodyH * 0.25);
-            ctx.lineTo(w * 0.05, torsoY);
-            ctx.lineTo(w * 0.38, torsoY + bodyH * 0.35);
-            ctx.lineTo(w * 0.3, torsoY + bodyH);
-            ctx.closePath();
-            ctx.fill();
-        } else {
-            const torsoW = opts.bulky ? w * 0.82 : w * 0.62;
-            ctx.fillRect(-torsoW / 2, torsoY, torsoW, bodyH);
-            if (opts.bulky) {
-                // armor plate accent
-                ctx.fillStyle = dark;
-                ctx.fillRect(-torsoW / 2, torsoY, torsoW, bodyH * 0.3);
-            }
-        }
-
-        // head
-        const headR = w * (opts.hunched ? 0.24 : 0.2);
-        const headY = torsoY - headR * 0.9;
-        ctx.fillStyle = opts.hunched ? shade(opts.color, 25) : skin;
-        ctx.beginPath();
-        ctx.arc(opts.hunched ? headR * 0.5 : 0, headY, headR, 0, Math.PI * 2);
-        ctx.fill();
-
-        if (opts.helmet) {
-            ctx.fillStyle = dark;
-            ctx.beginPath();
-            ctx.arc(0, headY, headR + 1.5, Math.PI, Math.PI * 2);
-            ctx.fill();
-            ctx.fillRect(-headR - 1.5, headY, (headR + 1.5) * 2, 2);
-        }
-
-        // arm + weapon (points forward, i.e. +x before facing flip)
-        const armY = torsoY + bodyH * 0.32;
-        ctx.strokeStyle = dark;
-        ctx.lineWidth = Math.max(2, w * 0.1);
-        ctx.lineCap = 'round';
-
-        if (opts.weapon === 'rifle') {
-            ctx.beginPath();
-            ctx.moveTo(w * 0.1, armY);
-            ctx.lineTo(w * 0.55, armY - 2);
-            ctx.stroke();
-        } else if (opts.weapon === 'cannon') {
-            ctx.lineWidth = Math.max(3, w * 0.16);
-            ctx.beginPath();
-            ctx.moveTo(w * 0.15, armY + 2);
-            ctx.lineTo(w * 0.62, armY);
-            ctx.stroke();
-        } else if (opts.weapon === 'bow') {
-            ctx.beginPath();
-            ctx.arc(w * 0.42, armY, w * 0.28, -Math.PI * 0.4, Math.PI * 0.4);
-            ctx.stroke();
-            ctx.beginPath();
-            ctx.moveTo(w * 0.3, armY - w * 0.1);
-            ctx.lineTo(w * 0.62, armY);
-            ctx.lineTo(w * 0.3, armY + w * 0.1);
-            ctx.stroke();
-        } else if (opts.weapon === 'claws') {
-            ctx.beginPath();
-            ctx.moveTo(w * 0.05, armY - 2);
-            ctx.lineTo(w * 0.4, armY - 8);
-            ctx.moveTo(w * 0.05, armY + 2);
-            ctx.lineTo(w * 0.42, armY + 4);
-            ctx.stroke();
-        }
-
-        ctx.restore();
-    }
-
-    const SPRITE_PROFILES = {
-        grunt:    { weapon: 'rifle', helmet: true, bulky: false, hunched: false, walking: true },
-        heavy:    { weapon: 'cannon', helmet: true, bulky: true, hunched: false, walking: true },
-        ranged:   { weapon: 'bow', helmet: false, bulky: false, hunched: false, walking: true },
-        shambler: { weapon: 'claws', helmet: false, bulky: false, hunched: true, walking: true },
-        runner:   { weapon: 'claws', helmet: false, bulky: false, hunched: true, walking: true },
-        brute:    { weapon: 'claws', helmet: false, bulky: true, hunched: true, walking: true }
-    };
-
     function drawEntity(e, isEnemy) {
-        const profile = SPRITE_PROFILES[e.def.sprite] || { weapon: 'rifle', helmet: false, bulky: false, hunched: false, walking: true };
-        drawHumanoid(e.x, e.y, e.w, e.h, isEnemy ? -1 : 1, {
-            color: e.def.color,
-            flash: e.flash,
-            weapon: profile.weapon,
-            helmet: profile.helmet,
-            bulky: profile.bulky,
-            hunched: profile.hunched,
-            walking: profile.walking
-        });
-        // hp bar
+        drawSpriteEntity(e, isEnemy);
+        // hp bar (skip once death animation is playing)
+        if (e.dying) return;
         const pct = Math.max(0, e.hp / e.maxHp);
         ctx.fillStyle = '#0c0d0b';
         ctx.fillRect(e.x - e.w/2, e.y - e.h - 12, e.w, 6);
@@ -608,11 +567,19 @@
         for (const en of enemies) drawEntity(en, true);
         drawBursts();
 
-        ctx.fillStyle = '#e8e4d8';
         for (const p of projectiles) {
-            ctx.beginPath();
-            ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
-            ctx.fill();
+            if (arrowImg.complete && arrowImg.naturalWidth > 0) {
+                ctx.save();
+                ctx.translate(p.x, p.y);
+                ctx.rotate(p.angle || 0);
+                ctx.drawImage(arrowImg, -12, -4, 24, 8);
+                ctx.restore();
+            } else {
+                ctx.fillStyle = '#e8e4d8';
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+                ctx.fill();
+            }
         }
 
         ctx.font = '15px monospace';
@@ -682,5 +649,16 @@
     waveTotalEl.textContent = TOTAL_WAVES;
     resize();
     resetGame();
+
+    overlayBtn.disabled = true;
+    overlayBtn.textContent = 'LOADING...';
+    const loadCheck = setInterval(() => {
+        if (assetsLoaded >= assetsToLoad) {
+            clearInterval(loadCheck);
+            overlayBtn.disabled = false;
+            overlayBtn.textContent = 'START';
+        }
+    }, 100);
+
     requestAnimationFrame(loop);
 })();
